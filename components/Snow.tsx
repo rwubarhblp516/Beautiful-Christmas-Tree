@@ -17,8 +17,6 @@ const snowVertexShader = `
   void main() {
     vec3 pos = position;
     
-    // Physics
-    // Fall down based on Global Time.
     float fallSpeed = aVelocity.y; 
     
     pos.y = mod(pos.y - uTime * fallSpeed + 15.0, 30.0) - 15.0; // Wrap Y (-15 to 15)
@@ -35,8 +33,10 @@ const snowVertexShader = `
     // Size
     gl_PointSize = aScale * (15.0 / -mvPosition.z);
     
-    // Fade at edges of box
-    vAlpha = 1.0 - smoothstep(12.0, 15.0, abs(pos.y));
+    // Fade at edges of box and with depth for softer horizon
+    float yFade = 1.0 - smoothstep(10.0, 15.0, abs(pos.y));
+    float zFade = 1.0 - smoothstep(20.0, 35.0, abs(pos.z));
+    vAlpha = yFade * zFade;
   }
 `;
 
@@ -55,8 +55,8 @@ const snowFragmentShader = `
 `;
 
 const Snow: React.FC<{ mixFactor: number }> = ({ mixFactor }) => {
-  // RESTORED: Full snow count
-  const count = 3000;
+  // Fewer flakes for clarity and perf
+  const count = 1800;
 
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);

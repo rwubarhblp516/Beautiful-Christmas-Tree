@@ -254,9 +254,10 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
       <pointLight position={[10, -5, 10]} intensity={1.2} color="#ff0000" />
       <pointLight position={[0, 10, 10]} intensity={0.5} color="#ffffff" />
       
-      {/* Use built-in preset to avoid corrupted local HDR errors */}
+      {/* Atmosphere & stars */}
+      <fog attach="fog" args={[0x010a05, 35, 80]} />
       <Environment preset="sunset" background={false} />
-      <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />
+      <Stars radius={120} depth={60} count={2600} factor={4} saturation={0} fade speed={0.25} />
 
       <Snow mixFactor={mixFactor} />
 

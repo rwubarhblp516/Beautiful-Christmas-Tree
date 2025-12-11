@@ -26,8 +26,8 @@ const App: React.FC = () => {
 
   // Camera Gui Visibility
   const [showCamera, setShowCamera] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
-  const [volume, setVolume] = useState(0.5);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(0.3);
   const [bgmReady, setBgmReady] = useState(false);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
   
@@ -59,15 +59,35 @@ const App: React.FC = () => {
       }
   }, [isMuted, volume]);
 
+  const fadeInBgm = useCallback((targetVolume: number, duration = 1500) => {
+      const bg = bgmRef.current;
+      if (!bg) return;
+      const start = bg.volume;
+      const delta = targetVolume - start;
+      const startTime = performance.now();
+      const step = (now: number) => {
+          const t = Math.min(1, (now - startTime) / duration);
+          bg.volume = Math.max(0, start + delta * t);
+          if (t < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+  }, []);
+
   const ensureAudioStarted = useCallback(() => {
       initAudio();
       if (bgmRef.current) {
           bgmRef.current
             .play()
-            .then(() => setBgmReady(true))
+            .then(() => {
+                setBgmReady(true);
+                if (!isMuted) {
+                    bgmRef.current!.volume = 0;
+                    fadeInBgm(volume);
+                }
+            })
             .catch(() => {});
       }
-  }, [initAudio]);
+  }, [fadeInBgm, initAudio, isMuted, volume]);
 
   // Load cached images on first render (stored in IndexedDB)
   useEffect(() => {
@@ -86,6 +106,11 @@ const App: React.FC = () => {
           revokeBlobUrls(currentUrlsRef.current);
       };
   }, []);
+
+  // Try to start BGM on load (will silently fail if autoplay blocked)
+  useEffect(() => {
+      ensureAudioStarted();
+  }, [ensureAudioStarted]);
 
   // Apply mute/unmute to audio refs
   useEffect(() => {
@@ -136,6 +161,13 @@ const App: React.FC = () => {
           setActivePhotoUrl(null);
       }
       setIsSignatureOpen(true);
+  };
+
+  const handleRandomPhoto = () => {
+      if (userImages.length > 0) {
+          const randomImg = userImages[Math.floor(Math.random() * userImages.length)];
+          setActivePhotoUrl(randomImg);
+      }
   };
 
   const toggleMute = () => {
@@ -308,6 +340,18 @@ const App: React.FC = () => {
                               我~一直都想对你说~
                           </div>
                       )}
+                      {/* Paper grain overlay */}
+                      <div 
+                        className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-25"
+                        style={{
+                            backgroundImage: `
+                              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15), transparent 35%),
+                              radial-gradient(circle at 80% 40%, rgba(255,255,255,0.08), transparent 30%),
+                              radial-gradient(circle at 40% 70%, rgba(0,0,0,0.25), transparent 30%),
+                              repeating-linear-gradient(0deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06) 1px, transparent 1px, transparent 3px)
+                            `
+                        }}
+                      />
                       {/* Gloss Overlay */}
                       <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/20 pointer-events-none" />
                   </div>
@@ -328,7 +372,14 @@ const App: React.FC = () => {
               </div>
               
               {/* Confirm Button (Floating below) */}
-              <div className="absolute bottom-10 left-0 w-full flex justify-center">
+              <div className="absolute bottom-10 left-0 w-full flex justify-center gap-3">
+                  <button 
+                    onClick={handleRandomPhoto}
+                    className={textButtonClass}
+                    disabled={userImages.length === 0}
+                  >
+                      随机一张
+                  </button>
                   <button 
                     onClick={() => setIsSignatureOpen(false)}
                     className={textButtonClass}
