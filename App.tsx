@@ -54,40 +54,38 @@ const App: React.FC = () => {
       if (!bgmRef.current) {
           const bg = new Audio('/audio/bgm.mp3');
           bg.loop = true;
+          bg.autoplay = true;
+          bg.preload = 'auto';
           bg.volume = isMuted ? 0 : volume;
           bgmRef.current = bg;
       }
   }, [isMuted, volume]);
 
-  const fadeInBgm = useCallback((targetVolume: number, duration = 1500) => {
-      const bg = bgmRef.current;
-      if (!bg) return;
-      const start = bg.volume;
-      const delta = targetVolume - start;
-      const startTime = performance.now();
-      const step = (now: number) => {
-          const t = Math.min(1, (now - startTime) / duration);
-          bg.volume = Math.max(0, start + delta * t);
-          if (t < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-  }, []);
-
   const ensureAudioStarted = useCallback(() => {
       initAudio();
       if (bgmRef.current) {
-          bgmRef.current
+          const bg = bgmRef.current;
+          bg.muted = false;
+          bg.volume = isMuted ? 0 : volume;
+          bg
             .play()
-            .then(() => {
-                setBgmReady(true);
-                if (!isMuted) {
-                    bgmRef.current!.volume = 0;
-                    fadeInBgm(volume);
-                }
-            })
-            .catch(() => {});
+            .then(() => setBgmReady(true))
+            .catch(() => {
+                // Fallback: try muted autoplay then unmute
+                bg.muted = true;
+                bg.volume = 0;
+                bg.play()
+                  .then(() => {
+                      bg.muted = false;
+                      bg.volume = isMuted ? 0 : volume;
+                      setBgmReady(true);
+                  })
+                  .catch(() => {
+                      // Autoplay blocked; wait for user gesture
+                  });
+            });
       }
-  }, [fadeInBgm, initAudio, isMuted, volume]);
+  }, [initAudio, isMuted, volume]);
 
   // Load cached images on first render (stored in IndexedDB)
   useEffect(() => {
@@ -110,6 +108,21 @@ const App: React.FC = () => {
   // Try to start BGM on load (will silently fail if autoplay blocked)
   useEffect(() => {
       ensureAudioStarted();
+      const onFirstInteraction = () => {
+          ensureAudioStarted();
+      };
+      const events: Array<keyof WindowEventMap> = ['pointerdown', 'touchstart', 'keydown'];
+      events.forEach(ev => window.addEventListener(ev, onFirstInteraction, { once: true }));
+
+      const onVisible = () => {
+          if (!document.hidden) ensureAudioStarted();
+      };
+      document.addEventListener('visibilitychange', onVisible);
+
+      return () => {
+          events.forEach(ev => window.removeEventListener(ev, onFirstInteraction));
+          document.removeEventListener('visibilitychange', onVisible);
+      };
   }, [ensureAudioStarted]);
 
   // Apply mute/unmute to audio refs

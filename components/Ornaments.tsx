@@ -574,67 +574,62 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
       return [generateCardTexture()];
   }, [type]);
 
-  useLayoutEffect(() => {
-     // Skip instanced logic for types that use individual meshes
-     if (!meshRef.current || type === 'PHOTO' || type === 'BOX') return;
-     
-     data.forEach((item, i) => {
-         // If Candy, we force white so texture renders correctly.
-         // If other types, we use the random assigned color.
-         const color = type === 'CANDY' ? new THREE.Color('#ffffff') : item.color;
-         
-         meshRef.current!.setColorAt(i, color);
-         dummy.position.copy(item.targetPos);
-         dummy.scale.copy(item.targetScale);
-         dummy.rotation.copy(item.rotation);
-         dummy.updateMatrix();
-         meshRef.current!.setMatrixAt(i, dummy.matrix);
-     });
-     
-     if (meshRef.current.instanceColor) {
-         meshRef.current.instanceColor.needsUpdate = true;
-     }
-     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [data, type, dummy]);
+  // Individual ornament mesh (non-photo, non-box) to keep per-item color and chaos animation
+  const OrnamentMesh: React.FC<{ item: OrnamentData }> = ({ item }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+    const currentMixRef = useRef(1);
+    const currentPos = useRef(new THREE.Vector3());
+    const currentScale = useRef(new THREE.Vector3());
 
-  useFrame((state, delta) => {
-    // Skip instanced update for complex types
-    if (!meshRef.current || type === 'PHOTO' || type === 'BOX') return;
+    useFrame((state, delta) => {
+      if (!meshRef.current || !materialRef.current) return;
+      const speed = 2.0 * delta;
+      currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
+      const t = currentMixRef.current;
 
-    const speed = 2.0 * delta;
-    currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
-    const t = currentMixRef.current;
-    
-    const currentPos = new THREE.Vector3();
-    const currentScale = new THREE.Vector3();
+      currentPos.current.lerpVectors(item.chaosPos, item.targetPos, t);
+      meshRef.current.position.copy(currentPos.current);
 
-    data.forEach((item, i) => {
-      currentPos.lerpVectors(item.chaosPos, item.targetPos, t);
-      dummy.position.copy(currentPos);
-      
       if (type === 'STAR' && t > 0.8) {
-         dummy.lookAt(0, currentPos.y, 0); 
-         dummy.rotateZ(Math.PI / 2); // Orient star to face out
+         meshRef.current.lookAt(0, currentPos.current.y, 0); 
+         meshRef.current.rotateZ(Math.PI / 2); 
       } else if (type === 'CRYSTAL' && t > 0.8) {
-         dummy.lookAt(0, currentPos.y, 0); 
+         meshRef.current.lookAt(0, currentPos.current.y, 0); 
       } else {
-         dummy.rotation.copy(item.rotation);
-         // Spin the ornaments in chaos mode
+         meshRef.current.rotation.copy(item.rotation);
          if (t < 0.5) {
-             dummy.rotation.x += delta * 0.5;
-             dummy.rotation.y += delta * 0.5;
+             meshRef.current.rotation.x += delta * 0.5;
+             meshRef.current.rotation.y += delta * 0.5;
          }
       }
 
-      currentScale.lerpVectors(item.chaosScale, item.targetScale, t);
-      dummy.scale.copy(currentScale); 
-
-      dummy.updateMatrix();
-      meshRef.current!.setMatrixAt(i, dummy.matrix);
+      currentScale.current.lerpVectors(item.chaosScale, item.targetScale, t);
+      meshRef.current.scale.copy(currentScale.current);
     });
-    
-    meshRef.current.instanceMatrix.needsUpdate = true;
-  });
+
+    const color = type === 'CANDY' ? '#ffffff' : `#${item.color.getHexString()}`;
+    const metal = type === 'CRYSTAL' ? 0.9 : 0.2;
+    const rough = type === 'CANDY' ? 0.25 : 0.35;
+    const emissive = type === 'CRYSTAL' ? '#112244' : '#111111';
+    const emissiveIntensity = type === 'CRYSTAL' ? 0.25 : 0.05;
+    const tex = type === 'CANDY' ? candyTexture : undefined;
+
+    return (
+      <mesh ref={meshRef} position={item.targetPos} rotation={item.rotation} scale={item.targetScale}>
+        <primitive object={geometry} attach="geometry" />
+        <meshStandardMaterial
+          ref={materialRef}
+          map={tex}
+          color={color}
+          roughness={rough}
+          metalness={metal}
+          emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+        />
+      </mesh>
+    );
+  };
 
   if (type === 'PHOTO') {
       return (
@@ -658,6 +653,7 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
   }
 
   // Use Detailed GiftBox Mesh
+  // For Boxes, keep detailed mesh to preserve ribbon/textures and colors
   if (type === 'BOX') {
       return (
           <group>
@@ -665,19 +661,16 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
                   <GiftBoxMesh key={i} item={item} mixFactor={mixFactor} />
               ))}
           </group>
-      )
+      );
   }
 
+  // Render non-photo ornaments individually to restore reliable per-color shading
   return (
-    <instancedMesh ref={meshRef} args={[geometry, undefined, count]}>
-      <meshStandardMaterial 
-        map={candyTexture}
-        roughness={type === 'CANDY' ? 0.2 : 0.15} 
-        metalness={type === 'CRYSTAL' ? 0.9 : 0.5} 
-        emissive={type === 'CRYSTAL' ? "#112244" : "#000000"}
-        emissiveIntensity={0.2}
-      />
-    </instancedMesh>
+    <group>
+      {data.map((item, i) => (
+        <OrnamentMesh key={i} item={item} />
+      ))}
+    </group>
   );
 };
 

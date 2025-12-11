@@ -79,11 +79,10 @@ const fragmentShader = `
 interface FoliageProps {
   mixFactor: number; 
   colors: { bottom: string, top: string };
+  count?: number;
 }
 
-const Foliage: React.FC<FoliageProps> = ({ mixFactor, colors }) => {
-  // RESTORED: Full particle count for high fidelity on all devices
-  const count = 75000; 
+const Foliage: React.FC<FoliageProps> = ({ mixFactor, colors, count = 75000 }) => {
   
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   

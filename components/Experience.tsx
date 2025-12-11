@@ -26,7 +26,11 @@ const BALL_COLORS = [
     '#1B5E20', // Dark Green
     '#D4AF37', // Gold 
     '#C0C0C0', // Silver
-    '#191970'  // Midnight Blue
+    '#191970', // Midnight Blue
+    '#B8860B', // Dark Goldenrod
+    '#004225', // Deep Forest Green
+    '#8A2BE2', // Blue Violet
+    '#DAA520'  // Goldenrod
 ]; 
 
 const BOX_COLORS = [
@@ -241,6 +245,14 @@ const SceneController: React.FC<{
 
 const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, signatureText }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
+    []
+  );
+  const starsCount = isMobile ? 1400 : 2600;
+  const bloomIntensity = isMobile ? 0.85 : 1.2;
+  const bloomRadius = isMobile ? 0.45 : 0.6;
+  const foliageCount = isMobile ? 45000 : 75000;
   
   const photoCount = (userImages && userImages.length > 0) ? userImages.length : 10;
 
@@ -257,13 +269,13 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
       {/* Atmosphere & stars */}
       <fog attach="fog" args={[0x010a05, 35, 80]} />
       <Environment preset="sunset" background={false} />
-      <Stars radius={120} depth={60} count={2600} factor={4} saturation={0} fade speed={0.25} />
+      <Stars radius={120} depth={60} count={starsCount} factor={4} saturation={0} fade speed={0.25} />
 
       <Snow mixFactor={mixFactor} />
 
       <group ref={groupRef} position={[0, 0, 0]}>
         <TopStar mixFactor={mixFactor} />
-        <Foliage mixFactor={mixFactor} colors={colors} />
+        <Foliage mixFactor={mixFactor} colors={colors} count={foliageCount} />
         <SpiralLights mixFactor={mixFactor} />
         
         <Ornaments 
@@ -314,8 +326,8 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
         <Bloom 
             luminanceThreshold={0.9} 
             mipmapBlur 
-            intensity={1.2} 
-            radius={0.6}
+            intensity={bloomIntensity} 
+            radius={bloomRadius}
         />
         <Vignette eskil={false} offset={0.1} darkness={1.1} />
       </EffectComposer>
@@ -324,9 +336,15 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
 };
 
 const Experience: React.FC<ExperienceProps> = (props) => {
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
+    []
+  );
+  const dprSettings = isMobile ? [1, 1.1] : [1, 1.25];
+
   return (
     <Canvas
-      dpr={[1, 1.25]} 
+      dpr={dprSettings} 
       // OPTIMIZATION: Tighten near/far planes to increase depth buffer precision on mobile.
       // 5-80 covers the tree nicely (centered at 0, camera at 32).
       camera={{ position: [0, 0, 32], fov: 45, near: 5, far: 80 }}
