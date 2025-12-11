@@ -22,6 +22,7 @@ interface OrnamentsProps {
   scale?: number;
   userImages?: string[];
   signatureText?: string;
+  customCards?: Array<{ id: string; message: string; signature: string }>;
 }
 
 // --- Procedural Geometry Generators ---
@@ -191,9 +192,10 @@ const PhotoFrameMesh: React.FC<{
 
     useFrame((state, delta) => {
         if (!groupRef.current || !innerRef.current) return;
-        const speed = 2.0 * delta;
-        currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
-        const t = currentMixRef.current;
+    const speed = 0.8 * delta;
+    currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
+    const tRaw = currentMixRef.current;
+    const t = Math.pow(tRaw, 0.6); // ease-in to slow early convergence
         
         vecPos.lerpVectors(item.chaosPos, item.targetPos, t);
         groupRef.current.position.copy(vecPos);
@@ -295,12 +297,14 @@ const PhotoFrameMesh: React.FC<{
 };
 
 // --- Procedural Gift Box Component ---
+const smooth = (t: number) => t * t * (3 - 2 * t);
+
 const GiftBoxMesh: React.FC<{
     item: OrnamentData;
     mixFactor: number;
 }> = ({ item, mixFactor }) => {
     const groupRef = useRef<THREE.Group>(null);
-    const currentMixRef = useRef(1);
+    const currentMixRef = useRef(mixFactor);
     
     const vecPos = useMemo(() => new THREE.Vector3(), []);
     const vecScale = useMemo(() => new THREE.Vector3(), []);
@@ -336,9 +340,9 @@ const GiftBoxMesh: React.FC<{
 
     useFrame((state, delta) => {
         if (!groupRef.current) return;
-        const speed = 2.0 * delta;
+        const speed = 0.9 * delta;
         currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
-        const t = currentMixRef.current;
+        const t = smooth(currentMixRef.current);
         
         vecPos.lerpVectors(item.chaosPos, item.targetPos, t);
         groupRef.current.position.copy(vecPos);
@@ -384,7 +388,82 @@ const GiftBoxMesh: React.FC<{
     );
 };
 
-const generateCardTexture = () => {
+interface OrnamentMeshProps {
+    item: OrnamentData;
+    mixFactor: number;
+    type: 'BALL' | 'STAR' | 'CANDY' | 'CRYSTAL';
+    geometry: THREE.BufferGeometry;
+    candyTexture?: THREE.Texture | null;
+}
+
+// Separated to keep a stable component identity; otherwise React remounts on every mix change
+const OrnamentMesh: React.FC<OrnamentMeshProps> = ({ item, mixFactor, type, geometry, candyTexture }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+    const currentMixRef = useRef(mixFactor);
+    const currentPos = useRef(new THREE.Vector3());
+    const currentScale = useRef(new THREE.Vector3());
+
+    // Initialize position/scale based on current mix to avoid jumps on mount
+    useLayoutEffect(() => {
+      if (!meshRef.current) return;
+      const t = smooth(currentMixRef.current);
+      currentPos.current.lerpVectors(item.chaosPos, item.targetPos, t);
+      meshRef.current.position.copy(currentPos.current);
+      currentScale.current.lerpVectors(item.chaosScale, item.targetScale, t);
+      meshRef.current.scale.copy(currentScale.current);
+    }, [item]);
+
+    useFrame((state, delta) => {
+      if (!meshRef.current || !materialRef.current) return;
+      const speed = 0.9 * delta;
+      currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
+      const t = smooth(currentMixRef.current);
+
+      currentPos.current.lerpVectors(item.chaosPos, item.targetPos, t);
+      meshRef.current.position.copy(currentPos.current);
+
+      if (type === 'STAR' && t > 0.8) {
+         meshRef.current.lookAt(0, currentPos.current.y, 0); 
+         meshRef.current.rotateZ(Math.PI / 2); 
+      } else if (type === 'CRYSTAL' && t > 0.8) {
+         meshRef.current.lookAt(0, currentPos.current.y, 0); 
+      } else {
+         meshRef.current.rotation.copy(item.rotation);
+         if (t < 0.5) {
+             meshRef.current.rotation.x += delta * 0.5;
+             meshRef.current.rotation.y += delta * 0.5;
+         }
+      }
+
+      currentScale.current.lerpVectors(item.chaosScale, item.targetScale, t);
+      meshRef.current.scale.copy(currentScale.current);
+    });
+
+    const color = type === 'CANDY' ? '#ffffff' : `#${item.color.getHexString()}`;
+    const metal = type === 'CRYSTAL' ? 0.9 : 0.2;
+    const rough = type === 'CANDY' ? 0.25 : 0.35;
+    const emissive = type === 'CRYSTAL' ? '#112244' : '#111111';
+    const emissiveIntensity = type === 'CRYSTAL' ? 0.25 : 0.05;
+    const tex = type === 'CANDY' ? candyTexture : undefined;
+
+    return (
+      <mesh ref={meshRef} position={item.targetPos} rotation={item.rotation} scale={item.targetScale}>
+        <primitive object={geometry} attach="geometry" />
+        <meshStandardMaterial
+          ref={materialRef}
+          map={tex}
+          color={color}
+          roughness={rough}
+          metalness={metal}
+          emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+        />
+      </mesh>
+    );
+};
+
+const generateCardTexture = (message?: string) => {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 320;
@@ -392,6 +471,19 @@ const generateCardTexture = () => {
     if (ctx) {
         ctx.fillStyle = '#000000';
         ctx.fillRect(0,0, 256, 320);
+        if (message) {
+            ctx.fillStyle = '#d9d9d9';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = "bold 24px 'Times New Roman', serif";
+            const lines = message.split(/\r?\n/);
+            const lineHeight = 32;
+            const centerY = canvas.height / 2;
+            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
+            lines.forEach((line, idx) => {
+                ctx.fillText(line, canvas.width / 2, startY + idx * lineHeight, canvas.width - 40);
+            });
+        }
     }
     return new THREE.CanvasTexture(canvas);
 }
@@ -434,11 +526,7 @@ const getTypeOffsetIndex = (type: string) => {
     }
 }
 
-const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], signatureText }) => {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const currentMixRef = useRef(1);
-
+const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], signatureText, customCards = [] }) => {
   const candyTexture = useMemo(() => {
       if (type === 'CANDY') return generateCandyStripeTexture();
       return null;
@@ -470,6 +558,8 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
       }
   }, [type]);
 
+  const photoCount = type === 'PHOTO' ? (userImages?.length || 0) + (customCards?.length || 0) : count;
+
   const data = useMemo(() => {
     const items: OrnamentData[] = [];
     
@@ -483,7 +573,9 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
     const typeIndex = getTypeOffsetIndex(type);
     const angleOffset = typeIndex * (Math.PI * 2 / 6); // Spread 6 types over 360 deg
 
-    for (let i = 0; i < count; i++) {
+    const total = type === 'PHOTO' ? photoCount : count;
+
+    for (let i = 0; i < total; i++) {
       // --- Deterministic Golden Spiral Position ---
       
       // Vertical distribution:
@@ -567,86 +659,43 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
       });
     }
     return items;
-  }, [count, type, colors, scale]);
+  }, [count, type, colors, scale, photoCount]);
 
-  const fallbackTextures = useMemo(() => {
+  const cardTextures = useMemo(() => {
       if (type !== 'PHOTO') return [];
-      return [generateCardTexture()];
-  }, [type]);
+      return (customCards || []).map(card => ({
+          id: card.id,
+          texture: generateCardTexture(card.message || ''),
+          signature: generateSignatureTexture(card.signature || '')
+      }));
+  }, [type, customCards]);
 
-  // Individual ornament mesh (non-photo, non-box) to keep per-item color and chaos animation
-  const OrnamentMesh: React.FC<{ item: OrnamentData }> = ({ item }) => {
-    const meshRef = useRef<THREE.Mesh>(null);
-    const materialRef = useRef<THREE.MeshStandardMaterial>(null);
-    const currentMixRef = useRef(1);
-    const currentPos = useRef(new THREE.Vector3());
-    const currentScale = useRef(new THREE.Vector3());
-
-    useFrame((state, delta) => {
-      if (!meshRef.current || !materialRef.current) return;
-      const speed = 2.0 * delta;
-      currentMixRef.current = lerp(currentMixRef.current, mixFactor, speed);
-      const t = currentMixRef.current;
-
-      currentPos.current.lerpVectors(item.chaosPos, item.targetPos, t);
-      meshRef.current.position.copy(currentPos.current);
-
-      if (type === 'STAR' && t > 0.8) {
-         meshRef.current.lookAt(0, currentPos.current.y, 0); 
-         meshRef.current.rotateZ(Math.PI / 2); 
-      } else if (type === 'CRYSTAL' && t > 0.8) {
-         meshRef.current.lookAt(0, currentPos.current.y, 0); 
-      } else {
-         meshRef.current.rotation.copy(item.rotation);
-         if (t < 0.5) {
-             meshRef.current.rotation.x += delta * 0.5;
-             meshRef.current.rotation.y += delta * 0.5;
-         }
-      }
-
-      currentScale.current.lerpVectors(item.chaosScale, item.targetScale, t);
-      meshRef.current.scale.copy(currentScale.current);
-    });
-
-    const color = type === 'CANDY' ? '#ffffff' : `#${item.color.getHexString()}`;
-    const metal = type === 'CRYSTAL' ? 0.9 : 0.2;
-    const rough = type === 'CANDY' ? 0.25 : 0.35;
-    const emissive = type === 'CRYSTAL' ? '#112244' : '#111111';
-    const emissiveIntensity = type === 'CRYSTAL' ? 0.25 : 0.05;
-    const tex = type === 'CANDY' ? candyTexture : undefined;
-
-    return (
-      <mesh ref={meshRef} position={item.targetPos} rotation={item.rotation} scale={item.targetScale}>
-        <primitive object={geometry} attach="geometry" />
-        <meshStandardMaterial
-          ref={materialRef}
-          map={tex}
-          color={color}
-          roughness={rough}
-          metalness={metal}
-          emissive={emissive}
-          emissiveIntensity={emissiveIntensity}
-        />
-      </mesh>
-    );
-  };
+  const photoEntries = useMemo(() => {
+      if (type !== 'PHOTO') return [];
+      const entries: Array<{ key: string; kind: 'image' | 'card'; url?: string; texture?: THREE.Texture; signature?: THREE.Texture | null; }> = [];
+      userImages?.forEach((url, idx) => {
+          if (url) entries.push({ key: `img-${idx}-${url}`, kind: 'image', url, signature: signatureTexture });
+      });
+      cardTextures.forEach(card => {
+          entries.push({ key: `card-${card.id}`, kind: 'card', texture: card.texture, signature: card.signature });
+      });
+      return entries;
+  }, [type, userImages, signatureTexture, cardTextures]);
 
   if (type === 'PHOTO') {
+      if (photoEntries.length === 0) return null;
       return (
           <group>
               {data.map((item, i) => {
-                  let imgSrc: string | undefined = undefined;
-                  if (userImages && userImages.length > 0) {
-                      if (i < userImages.length) {
-                           imgSrc = userImages[i];
-                      }
-                  } 
-                  const fallback = fallbackTextures[i % fallbackTextures.length];
-                  if (imgSrc) {
-                      return <SuspensePhotoOrnament key={i} item={item} mixFactor={mixFactor} url={imgSrc} signatureTexture={signatureTexture} />;
-                  } else {
-                      return <PhotoFrameMesh key={i} item={item} mixFactor={mixFactor} texture={fallback} signatureTexture={signatureTexture} />;
+                  const entry = photoEntries[i];
+                  if (!entry) return null;
+                  if (entry.kind === 'image' && entry.url) {
+                      return <SuspensePhotoOrnament key={entry.key} item={item} mixFactor={mixFactor} url={entry.url} signatureTexture={entry.signature} />;
                   }
+                  if (entry.kind === 'card' && entry.texture) {
+                      return <PhotoFrameMesh key={entry.key} item={item} mixFactor={mixFactor} texture={entry.texture} signatureTexture={entry.signature} />;
+                  }
+                  return null;
               })}
           </group>
       )
@@ -668,7 +717,14 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
   return (
     <group>
       {data.map((item, i) => (
-        <OrnamentMesh key={i} item={item} />
+        <OrnamentMesh 
+            key={i} 
+            item={item} 
+            mixFactor={mixFactor} 
+            type={type} 
+            geometry={geometry} 
+            candyTexture={candyTexture}
+        />
       ))}
     </group>
   );

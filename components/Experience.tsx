@@ -17,6 +17,7 @@ interface ExperienceProps {
   inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean }>;
   userImages?: string[];
   signatureText?: string;
+  customCards?: Array<{ id: string; message: string; signature: string }>;
 }
 
 // COLORS FOR REALISTIC OBJECTS
@@ -243,7 +244,7 @@ const SceneController: React.FC<{
     return null;
 };
 
-const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, signatureText }) => {
+const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, signatureText, customCards }) => {
   const groupRef = useRef<THREE.Group>(null);
   const isMobile = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
@@ -254,7 +255,7 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
   const bloomRadius = isMobile ? 0.45 : 0.6;
   const foliageCount = isMobile ? 45000 : 75000;
   
-  const photoCount = (userImages && userImages.length > 0) ? userImages.length : 10;
+  const photoCount = (userImages?.length || 0) + (customCards?.length || 0);
 
   return (
     <>
@@ -313,13 +314,16 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
             scale={0.8}
             colors={CANDY_COLORS} 
         />
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="PHOTO" 
-            count={photoCount} 
-            userImages={userImages}
-            signatureText={signatureText}
-        />
+        {photoCount > 0 && (
+            <Ornaments 
+                mixFactor={mixFactor} 
+                type="PHOTO" 
+                count={photoCount} 
+                userImages={userImages}
+                signatureText={signatureText}
+                customCards={customCards}
+            />
+        )}
       </group>
 
       <EffectComposer enableNormalPass={false} multisampling={0}>

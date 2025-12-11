@@ -23,6 +23,9 @@ const App: React.FC = () => {
   const [isSignatureOpen, setIsSignatureOpen] = useState(false);
   const [signatureText, setSignatureText] = useState("");
   const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
+  const [cardMessage, setCardMessage] = useState("我一直都想对你说~");
+  const [customCards, setCustomCards] = useState<Array<{ id: string; message: string; signature: string }>>([]);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   // Camera Gui Visibility
   const [showCamera, setShowCamera] = useState(true);
@@ -175,12 +178,60 @@ const App: React.FC = () => {
       }
       setIsSignatureOpen(true);
   };
-
   const handleRandomPhoto = () => {
-      if (userImages.length > 0) {
-          const randomImg = userImages[Math.floor(Math.random() * userImages.length)];
+      const total = userImages.length + customCards.length;
+      if (total === 0) return;
+
+      const pick = Math.floor(Math.random() * total);
+      if (pick < userImages.length) {
+          const randomImg = userImages[pick];
           setActivePhotoUrl(randomImg);
+      } else {
+          const card = customCards[pick - userImages.length];
+          if (!card) return;
+          setActivePhotoUrl(null);
+          setCardMessage(card.message || "我一直都想对你说~");
+          setSignatureText(card.signature || "");
       }
+  };
+
+  // Load cached custom cards from localStorage
+  useEffect(() => {
+      if (typeof window === 'undefined') return;
+      const raw = localStorage.getItem('custom_cards_v1');
+      if (raw) {
+          try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                  setCustomCards(parsed.filter(item => item && item.id && item.message !== undefined && item.signature !== undefined));
+              }
+          } catch (err) {
+              console.warn('Failed to parse cached cards', err);
+          }
+      }
+  }, []);
+
+  // Persist custom cards
+  useEffect(() => {
+      if (typeof window === 'undefined') return;
+      localStorage.setItem('custom_cards_v1', JSON.stringify(customCards));
+  }, [customCards]);
+
+  // Keep editable message surface in sync when state changes
+  useEffect(() => {
+      if (messageRef.current && messageRef.current.innerText !== cardMessage) {
+          messageRef.current.innerText = cardMessage;
+      }
+  }, [cardMessage, isSignatureOpen]);
+
+  const handleAddCard = () => {
+      ensureAudioStarted();
+      const trimmedMessage = cardMessage.trim() || "我一直都想对你说~";
+      const trimmedSignature = signatureText.trim();
+      const id = (crypto?.randomUUID?.() ?? `card-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      setCustomCards(prev => [...prev, { id, message: trimmedMessage, signature: trimmedSignature }]);
+      setIsSignatureOpen(false);
+      setTargetMix(1);
   };
 
   const toggleMute = () => {
@@ -301,9 +352,9 @@ const App: React.FC = () => {
 
       {/* CENTER TITLE - Ethereal Silver Script */}
       {/* Layer: z-0 (Background layer, behind the tree) */}
-      <div className={`absolute top-[5%] left-0 w-full flex justify-center pointer-events-none z-0 transition-opacity duration-700 ${isSignatureOpen ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`fixed top-[6%] left-0 w-full flex justify-center px-10 md:px-32 pointer-events-none z-50 transition-opacity duration-700 ${isSignatureOpen ? 'opacity-0' : 'opacity-100'}`}>
         <h1 
-            className="font-script text-6xl md:text-9xl text-center leading-[1.5] py-10"
+            className="font-script font-normal text-8xl md:text-[10rem] text-center leading-[1.2] py-6"
             style={{
                 // Silver Metallic Gradient
                 background: 'linear-gradient(to bottom, #ffffff 20%, #e8e8e8 50%, #b0b0b0 90%)',
@@ -313,7 +364,7 @@ const App: React.FC = () => {
                 filter: 'drop-shadow(0px 5px 5px rgba(0,0,0,0.8)) drop-shadow(0px 0px 20px rgba(255,255,255,0.4))'
             }}
         >
-            Merry Christmas
+             *Merry * Christmas*
         </h1>
       </div>
 
@@ -326,6 +377,7 @@ const App: React.FC = () => {
             inputRef={inputRef} 
             userImages={userImages}
             signatureText={signatureText}
+            customCards={customCards}
         />
       </div>
 
@@ -349,10 +401,19 @@ const App: React.FC = () => {
                       {activePhotoUrl ? (
                           <img src={activePhotoUrl} alt="Memory" className="w-full h-full object-cover" />
                       ) : (
-                          <div className="w-full h-full flex items-center justify-center text-white/40 font-body text-lg italic tracking-widest text-center px-4">
-                              我~一直都想对你说~
-                          </div>
+                          <div className="w-full h-full flex items-center justify-center text-white/40 font-body text-lg italic tracking-widest text-center px-4" />
                       )}
+                      {/* Editable message overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center px-4">
+                          <div
+                            ref={messageRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            data-placeholder="我一直都想对你说~"
+                            className="card-message-editor w-full h-full text-white/85 text-center font-script text-lg leading-7 tracking-widest whitespace-pre-wrap outline-none bg-transparent flex items-center justify-center"
+                            onInput={(e) => setCardMessage((e.target as HTMLDivElement).innerText)}
+                          />
+                      </div>
                       {/* Paper grain overlay */}
                       <div 
                         className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-25"
@@ -382,6 +443,17 @@ const App: React.FC = () => {
                         maxLength={20}
                       />
                   </div>
+                  {/* Add Card Button (Vector +) */}
+                  <button
+                    onClick={handleAddCard}
+                    className="absolute -bottom-6 right-4 w-10 h-10 rounded-full bg-black text-white border border-white/30 flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.4)] hover:bg-white hover:text-black transition"
+                    title="添加手写卡片到圣诞树"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </button>
               </div>
               
               {/* Confirm Button (Floating below) */}
@@ -389,7 +461,7 @@ const App: React.FC = () => {
                   <button 
                     onClick={handleRandomPhoto}
                     className={textButtonClass}
-                    disabled={userImages.length === 0}
+                    disabled={userImages.length === 0 && customCards.length === 0}
                   >
                       随机一张
                   </button>
@@ -400,6 +472,13 @@ const App: React.FC = () => {
                       完成签名
                   </button>
               </div>
+              <style>{`
+                .card-message-editor:empty:before {
+                    content: attr(data-placeholder);
+                    color: rgba(255,255,255,0.4);
+                    pointer-events: none;
+                }
+              `}</style>
           </div>
       )}
 
