@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Experience from './components/Experience';
 import GestureController from './components/GestureController';
 import { TreeColors, HandGesture } from './types';
+import { loadCachedImages, saveImagesToCache } from './utils/idb';
 
 const App: React.FC = () => {
   // 1 = Formed, 0 = Chaos.
@@ -25,6 +26,76 @@ const App: React.FC = () => {
 
   // Camera Gui Visibility
   const [showCamera, setShowCamera] = useState(true);
+  const [isMuted, setIsMuted] = useState(true);
+  const [volume, setVolume] = useState(0.5);
+  const [bgmReady, setBgmReady] = useState(false);
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
+  
+  const MAX_CACHE_IMAGES = 50;
+  const currentUrlsRef = useRef<string[]>([]);
+
+  const revokeBlobUrls = (urls: string[]) => {
+      urls.forEach(url => {
+          if (url && url.startsWith('blob:')) {
+              URL.revokeObjectURL(url);
+          }
+      });
+  };
+
+  const applyImages = (urls: string[]) => {
+      setUserImages(prev => {
+          revokeBlobUrls(prev);
+          currentUrlsRef.current = urls;
+          return urls;
+      });
+  };
+
+  const initAudio = useCallback(() => {
+      if (!bgmRef.current) {
+          const bg = new Audio('/audio/bgm.mp3');
+          bg.loop = true;
+          bg.volume = isMuted ? 0 : volume;
+          bgmRef.current = bg;
+      }
+  }, [isMuted, volume]);
+
+  const ensureAudioStarted = useCallback(() => {
+      initAudio();
+      if (bgmRef.current) {
+          bgmRef.current
+            .play()
+            .then(() => setBgmReady(true))
+            .catch(() => {});
+      }
+  }, [initAudio]);
+
+  // Load cached images on first render (stored in IndexedDB)
+  useEffect(() => {
+      loadCachedImages(MAX_CACHE_IMAGES)
+        .then(urls => {
+            if (urls.length > 0) {
+                applyImages(urls);
+            }
+        })
+        .catch(err => console.warn('Failed to load cached photos', err));
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+      return () => {
+          revokeBlobUrls(currentUrlsRef.current);
+      };
+  }, []);
+
+  // Apply mute/unmute to audio refs
+  useEffect(() => {
+      if (bgmRef.current) {
+          bgmRef.current.volume = isMuted ? 0 : volume;
+          if (!isMuted && bgmReady) {
+              bgmRef.current.play().catch(() => {});
+          }
+      }
+  }, [isMuted, bgmReady, volume]);
 
   // Wrap in useCallback to prevent new function creation on every render
   const handleGesture = useCallback((data: HandGesture) => {
@@ -48,10 +119,12 @@ const App: React.FC = () => {
 
   const toggleState = () => {
       setTargetMix(prev => prev === 1 ? 0 : 1);
+      ensureAudioStarted();
   };
 
   const handleUploadClick = () => {
       fileInputRef.current?.click();
+      ensureAudioStarted();
   };
 
   const handleSignatureClick = () => {
@@ -65,6 +138,11 @@ const App: React.FC = () => {
       setIsSignatureOpen(true);
   };
 
+  const toggleMute = () => {
+      ensureAudioStarted();
+      setIsMuted(prev => !prev);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
           setIsProcessing(true);
@@ -74,30 +152,35 @@ const App: React.FC = () => {
           
           // Defer processing to next tick to allow React to render the loading screen first
           setTimeout(() => {
-              const files = Array.from(e.target.files!).slice(0, 30); // Limit to 30
-              const urls = files.map(file => URL.createObjectURL(file));
-              
-              setUserImages(prev => {
-                  // Revoke old URLs to prevent memory leaks
-                  prev.forEach(url => URL.revokeObjectURL(url));
-                  return urls;
-              });
+              (async () => {
+                  const files = Array.from(e.target.files!).slice(0, MAX_CACHE_IMAGES); // Limit to 50
+                  let urls: string[] = [];
 
-              // Reset input
-              if (fileInputRef.current) fileInputRef.current.value = '';
+                  try {
+                      urls = await saveImagesToCache(files, MAX_CACHE_IMAGES);
+                  } catch (err) {
+                      console.warn('Failed to persist images to IndexedDB, falling back to object URLs', err);
+                      urls = files.map(file => URL.createObjectURL(file));
+                  }
 
-              // Keep loader visible for a moment to cover the texture upload stutter
-              setTimeout(() => {
-                  setIsProcessing(false);
-                  
-                  // 2. Trigger the "Ritual" Assembly Animation
-                  // Wait a brief moment after loader vanishes so user sees the scattered photos,
-                  // then fly them into position.
+                  applyImages(urls);
+
+                  // Reset input
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+
+                  // Keep loader visible for a moment to cover the texture upload stutter
                   setTimeout(() => {
-                      setTargetMix(1);
-                  }, 800);
+                      setIsProcessing(false);
+                      
+                      // 2. Trigger the "Ritual" Assembly Animation
+                      // Wait a brief moment after loader vanishes so user sees the scattered photos,
+                      // then fly them into position.
+                      setTimeout(() => {
+                          setTargetMix(1);
+                      }, 800);
 
-              }, 1200); 
+                  }, 1200); 
+              })();
           }, 50);
       }
   };
@@ -260,6 +343,43 @@ const App: React.FC = () => {
       {/* Responsive positioning: Flex Row on Mobile, Flex Col on Desktop */}
       <div className={`absolute top-6 right-6 md:top-10 md:right-10 z-30 pointer-events-auto flex flex-row md:flex-col items-center md:items-end gap-3 md:gap-4 transition-opacity duration-500 ${isSignatureOpen || isProcessing ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
           
+          {/* 0. Audio Toggle */}
+          <button 
+            onClick={toggleMute}
+            className={`${iconButtonClass} ${!isMuted ? 'text-white border-white/60 bg-white/10' : 'text-slate-300'}`}
+            title={isMuted ? "开启音乐" : "静音"}
+          >
+              {isMuted ? (
+                  // Muted Icon
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 8.25L5.25 12h-3v0m0 0h3l4.344 3.75M2.25 12v0l5.64-5.64a.75.75 0 011.11.09l2.476 3.168m-9.226 7.382l2.284-2.284m0 0l2.121-2.122m-2.12 2.122L5.25 12m0 0l2.122-2.121m0 0L10.5 6.75m0 0l8.25 8.25m-8.25-8.25L7.371 9.879M19.5 8.25A4.5 4.5 0 0118 16.64" />
+                  </svg>
+              ) : (
+                  // Volume Icon
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 5.25L6 9H3v6h3l5.25 3.75V5.25zm6.428 1.822a6.75 6.75 0 010 9.856M15 9.75a3.75 3.75 0 010 4.5" />
+                  </svg>
+              )}
+          </button>
+          
+          {/* Volume Slider */}
+          <div className="flex items-center gap-2 text-slate-300 text-xs md:text-[10px]">
+            <span className="uppercase tracking-widest">Vol</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={isMuted ? 0 : volume}
+              onChange={(e) => {
+                ensureAudioStarted();
+                setIsMuted(false);
+                setVolume(parseFloat(e.target.value));
+              }}
+              className="w-20 accent-[#d4af37]"
+            />
+          </div>
+
           {/* 1. Camera Toggle */}
           <button 
             onClick={() => setShowCamera(prev => !prev)}
