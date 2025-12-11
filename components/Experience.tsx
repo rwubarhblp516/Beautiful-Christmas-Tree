@@ -11,13 +11,18 @@ import Snow from './Snow';
 import TopStar from './TopStar';
 import { TreeColors } from '../types';
 
+type PhotoTransform = { scale: number; offset: { x: number; y: number } };
+
 interface ExperienceProps {
   mixFactor: number;
   colors: TreeColors;
   inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean }>;
   userImages?: string[];
+  userImageRecords?: Array<{ key: string; url: string }>;
   signatureText?: string;
   customCards?: Array<{ id: string; message: string; signature: string }>;
+  photoTransforms?: Record<string, PhotoTransform>;
+  onFocusMedia?: (entry: { kind: 'image' | 'card'; url?: string; message?: string; signature?: string | null; id?: string; cacheKey?: string; editable?: boolean }, screenPos?: { x: number; y: number }) => void;
 }
 
 // COLORS FOR REALISTIC OBJECTS
@@ -244,7 +249,7 @@ const SceneController: React.FC<{
     return null;
 };
 
-const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, signatureText, customCards }) => {
+const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, userImageRecords, signatureText, customCards, onFocusMedia, photoTransforms }) => {
   const groupRef = useRef<THREE.Group>(null);
   const isMobile = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
@@ -256,6 +261,12 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
   const foliageCount = isMobile ? 45000 : 75000;
   
   const photoCount = (userImages?.length || 0) + (customCards?.length || 0);
+  const shouldAutoFocus = mixFactor < 0.25 && !!inputRef.current.isDetected;
+  const imageKeyMap = useMemo(() => {
+      const map: Record<string, string> = {};
+      userImageRecords?.forEach(rec => { map[rec.url] = rec.key; });
+      return map;
+  }, [userImageRecords]);
 
   return (
     <>
@@ -320,8 +331,12 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
                 type="PHOTO" 
                 count={photoCount} 
                 userImages={userImages}
+                imageKeyMap={imageKeyMap}
                 signatureText={signatureText}
                 customCards={customCards}
+                onFocusMedia={onFocusMedia}
+                shouldAutoFocus={shouldAutoFocus}
+                photoTransforms={photoTransforms}
             />
         )}
       </group>

@@ -7,6 +7,16 @@ interface SpiralLightsProps {
   mixFactor: number
 }
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      instancedMesh: any
+      sphereGeometry: any
+      meshBasicMaterial: any
+    }
+  }
+}
+
 // Register three primitives for JSX
 extend({
   InstancedMesh: THREE.InstancedMesh,

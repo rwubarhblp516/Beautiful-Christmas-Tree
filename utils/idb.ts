@@ -77,17 +77,20 @@ const deleteKeys = async (keys: string[]) => {
   });
 };
 
-export const loadCachedImages = async (limit: number): Promise<string[]> => {
+export const loadCachedImagesWithKeys = async (limit: number): Promise<Array<{ key: string; url: string }>> => {
   const records = await getAllRecords();
   const sorted = records
     .filter(r => r.value && r.value.blob)
     .sort((a, b) => b.value.createdAt - a.value.createdAt)
     .slice(0, limit);
 
-  return sorted.map(r => URL.createObjectURL(r.value.blob));
+  return sorted.map(r => ({
+    key: r.key,
+    url: URL.createObjectURL(r.value.blob)
+  }));
 };
 
-export const saveImagesToCache = async (files: File[], limit: number): Promise<string[]> => {
+export const saveImagesToCacheWithKeys = async (files: File[], limit: number): Promise<Array<{ key: string; url: string }>> => {
   if (!files.length) return [];
 
   const timestamp = Date.now();
@@ -117,5 +120,23 @@ export const saveImagesToCache = async (files: File[], limit: number): Promise<s
   }
 
   // Return newest up to limit
-  return sorted.slice(0, limit).map(r => URL.createObjectURL(r.value.blob));
+  return sorted.slice(0, limit).map(r => ({
+    key: r.key,
+    url: URL.createObjectURL(r.value.blob)
+  }));
+};
+
+export const deleteCachedImages = async (keys: string[]) => {
+  await deleteKeys(keys);
+};
+
+// Backwards compatibility wrappers
+export const loadCachedImages = async (limit: number): Promise<string[]> => {
+  const list = await loadCachedImagesWithKeys(limit);
+  return list.map(item => item.url);
+};
+
+export const saveImagesToCache = async (files: File[], limit: number): Promise<string[]> => {
+  const list = await saveImagesToCacheWithKeys(files, limit);
+  return list.map(item => item.url);
 };

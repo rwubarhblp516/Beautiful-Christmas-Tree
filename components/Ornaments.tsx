@@ -1,6 +1,6 @@
 
-import React, { useMemo, useRef, useLayoutEffect } from 'react';
-import { useFrame, useLoader } from '@react-three/fiber';
+import React, { useMemo, useRef, useLayoutEffect, useCallback, useEffect, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { lerp, randomVector3 } from '../utils/math';
 
@@ -14,6 +14,11 @@ interface OrnamentData {
   chaosTilt: number;
 }
 
+type PhotoTransform = {
+  scale: number;
+  offset: { x: number; y: number };
+};
+
 interface OrnamentsProps {
   mixFactor: number;
   type: 'BALL' | 'BOX' | 'STAR' | 'CANDY' | 'CRYSTAL' | 'PHOTO';
@@ -21,8 +26,27 @@ interface OrnamentsProps {
   colors?: string[];
   scale?: number;
   userImages?: string[];
+  imageKeyMap?: Record<string, string>;
   signatureText?: string;
   customCards?: Array<{ id: string; message: string; signature: string }>;
+  onFocusMedia?: (entry: { kind: 'image' | 'card'; url?: string; message?: string; signature?: string | null; id?: string; cacheKey?: string; editable?: boolean }, screenPos?: { x: number; y: number }) => void;
+  shouldAutoFocus?: boolean;
+  photoTransforms?: Record<string, PhotoTransform>;
+}
+
+interface PhotoEntry {
+  key: string;
+  kind: 'image' | 'card';
+  url?: string;
+  texture?: THREE.Texture;
+  signatureTexture?: THREE.Texture | null;
+  message?: string;
+  signatureText?: string | null;
+  origin?: { x: number; y: number };
+  id?: string;
+  cacheKey?: string;
+  transform?: PhotoTransform;
+  editable?: boolean;
 }
 
 // --- Procedural Geometry Generators ---
@@ -133,18 +157,129 @@ const generateSignatureTexture = (text: string) => {
     return tex;
 }
 
+const createFallbackTexture = (label: string) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 640;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        ctx.fillStyle = '#111111';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#f8f8f8';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 32px sans-serif';
+        ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+};
+
+const loadImageElement = async (url: string): Promise<HTMLImageElement> => {
+    const fromUrl = (src: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = (e) => reject(e);
+            img.src = src;
+        });
+
+    try {
+        return await fromUrl(url);
+    } catch (firstErr) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`fetch ${res.status}`);
+            const blob = await res.blob();
+            const tmpUrl = URL.createObjectURL(blob);
+            try {
+                return await fromUrl(tmpUrl);
+            } finally {
+                URL.revokeObjectURL(tmpUrl);
+            }
+        } catch (fetchErr) {
+            throw fetchErr || firstErr;
+        }
+    }
+};
+
+const usePhotoTexture = (url: string, transform?: PhotoTransform) => {
+    const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        let activeTexture: THREE.Texture | null = null;
+        const load = async () => {
+            try {
+                const img = await loadImageElement(url);
+                if (cancelled) return;
+
+                const width = img.naturalWidth || (img as any).videoWidth || img.width || 1024;
+                const height = img.naturalHeight || (img as any).videoHeight || img.height || 1024;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('no canvas ctx');
+
+                ctx.fillStyle = '#f8f8f8';
+                ctx.fillRect(0, 0, width, height);
+
+                const safeScale = THREE.MathUtils.clamp(transform?.scale ?? 1, 0.5, 2.5);
+                const ox = THREE.MathUtils.clamp(transform?.offset?.x ?? 0, -0.6, 0.6);
+                const oy = THREE.MathUtils.clamp(transform?.offset?.y ?? 0, -0.6, 0.6);
+
+                ctx.save();
+                ctx.translate(width / 2 + ox * width, height / 2 + oy * height);
+                ctx.scale(safeScale, safeScale);
+                ctx.drawImage(img as CanvasImageSource, -width / 2, -height / 2, width, height);
+                ctx.restore();
+
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.needsUpdate = true;
+                activeTexture = tex;
+                setTexture(tex);
+            } catch (err) {
+                console.warn('Failed to load photo texture', url, err);
+                if (cancelled) return;
+                const tex = createFallbackTexture('加载失败');
+                activeTexture = tex;
+                setTexture(tex);
+            }
+        };
+
+        load();
+
+        return () => {
+            cancelled = true;
+            if (activeTexture) {
+                activeTexture.dispose();
+            }
+        };
+    }, [url, transform?.scale, transform?.offset?.x, transform?.offset?.y]);
+
+    return texture;
+};
+
 // --- Base Mesh Component for Photos ---
 const PhotoFrameMesh: React.FC<{
     item: OrnamentData;
     mixFactor: number;
     texture: THREE.Texture;
     signatureTexture?: THREE.Texture | null;
-}> = ({ item, mixFactor, texture, signatureTexture }) => {
+    entry?: PhotoEntry;
+    onFocus?: (entry: PhotoEntry, screenPos?: { x: number; y: number }) => void;
+}> = ({ item, mixFactor, texture, signatureTexture, entry, onFocus }) => {
     const groupRef = useRef<THREE.Group>(null);
     const innerRef = useRef<THREE.Group>(null); 
     const photoMatRef = useRef<THREE.MeshStandardMaterial>(null);
     const frameMatRef = useRef<THREE.MeshStandardMaterial>(null);
     const currentMixRef = useRef(1);
+    const worldVec = useMemo(() => new THREE.Vector3(), []);
+    const projVec = useMemo(() => new THREE.Vector3(), []);
     
     const vecPos = useMemo(() => new THREE.Vector3(), []);
     const vecScale = useMemo(() => new THREE.Vector3(), []);
@@ -249,7 +384,23 @@ const PhotoFrameMesh: React.FC<{
     });
 
     return (
-        <group ref={groupRef}>
+        <group 
+          ref={groupRef} 
+          onPointerDown={(e) => {
+             e.stopPropagation();
+             if (onFocus && entry && mixFactor < 0.25) {
+                 if (groupRef.current) {
+                     groupRef.current.getWorldPosition(worldVec);
+                     projVec.copy(worldVec).project(e.camera);
+                     const sx = (projVec.x * 0.5 + 0.5) * window.innerWidth;
+                     const sy = (projVec.y * -0.5 + 0.5) * window.innerHeight;
+                     onFocus(entry, { x: sx, y: sy });
+                 } else {
+                     onFocus(entry, { x: e.clientX, y: e.clientY });
+                 }
+             }
+          }}
+        >
             <group ref={innerRef}>
                 {/* Frame */}
                 <mesh>
@@ -493,9 +644,13 @@ const UserPhotoOrnament: React.FC<{
     mixFactor: number;
     url: string;
     signatureTexture?: THREE.Texture | null;
-}> = ({ item, mixFactor, url, signatureTexture }) => {
-    const texture = useLoader(THREE.TextureLoader, url);
-    return <PhotoFrameMesh item={item} mixFactor={mixFactor} texture={texture} signatureTexture={signatureTexture} />;
+    entry?: PhotoEntry;
+    onFocus?: (entry: PhotoEntry) => void;
+    transform?: PhotoTransform;
+}> = ({ item, mixFactor, url, signatureTexture, entry, onFocus, transform }) => {
+    const texture = usePhotoTexture(url, transform);
+    if (!texture) return null;
+    return <PhotoFrameMesh item={item} mixFactor={mixFactor} texture={texture} signatureTexture={signatureTexture} entry={entry} onFocus={onFocus} />;
 };
 
 const SuspensePhotoOrnament = (props: any) => {
@@ -526,7 +681,9 @@ const getTypeOffsetIndex = (type: string) => {
     }
 }
 
-const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], signatureText, customCards = [] }) => {
+const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], imageKeyMap = {}, signatureText, customCards = [], onFocusMedia, shouldAutoFocus = false, photoTransforms = {} }) => {
+  const photoGroupRef = useRef<THREE.Group>(null);
+
   const candyTexture = useMemo(() => {
       if (type === 'CANDY') return generateCandyStripeTexture();
       return null;
@@ -666,34 +823,90 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
       return (customCards || []).map(card => ({
           id: card.id,
           texture: generateCardTexture(card.message || ''),
-          signature: generateSignatureTexture(card.signature || '')
+          signatureTexture: generateSignatureTexture(card.signature || ''),
+          message: card.message,
+          signatureText: card.signature
       }));
   }, [type, customCards]);
 
   const photoEntries = useMemo(() => {
       if (type !== 'PHOTO') return [];
-      const entries: Array<{ key: string; kind: 'image' | 'card'; url?: string; texture?: THREE.Texture; signature?: THREE.Texture | null; }> = [];
+      const entries: PhotoEntry[] = [];
       userImages?.forEach((url, idx) => {
-          if (url) entries.push({ key: `img-${idx}-${url}`, kind: 'image', url, signature: signatureTexture });
+          if (url) {
+              const key = imageKeyMap[url] || `img-${idx}-${url}`;
+              entries.push({ key: `${key}-${idx}`, kind: 'image', url, signatureTexture: signatureTexture, signatureText, cacheKey: key, transform: photoTransforms?.[key], editable: false });
+          }
       });
       cardTextures.forEach(card => {
-          entries.push({ key: `card-${card.id}`, kind: 'card', texture: card.texture, signature: card.signature });
+          entries.push({ key: `card-${card.id}`, kind: 'card', texture: card.texture, signatureTexture: card.signatureTexture, message: card.message, signatureText: card.signatureText || '', id: card.id, editable: false });
       });
       return entries;
-  }, [type, userImages, signatureTexture, cardTextures]);
+  }, [type, userImages, signatureTexture, cardTextures, imageKeyMap, photoTransforms]);
+
+  const emitFocus = useCallback((entry: PhotoEntry, origin?: { x: number; y: number }) => {
+      if (!onFocusMedia) return;
+      onFocusMedia({
+          kind: entry.kind,
+          url: entry.url,
+          message: entry.message,
+          signature: entry.signatureText ?? null,
+          id: entry.id,
+          cacheKey: entry.cacheKey,
+          editable: entry.editable
+      }, origin);
+  }, [onFocusMedia]);
+
+  const autoFocusCooldown = useRef(0);
+  const tmpVec = useMemo(() => new THREE.Vector3(), []);
+  const tmpWorld = useMemo(() => new THREE.Vector3(), []);
+  const bestPos = useMemo(() => new THREE.Vector3(), []);
+  useFrame((state, delta) => {
+      if (type !== 'PHOTO') return;
+      if (!shouldAutoFocus || !onFocusMedia) return;
+      autoFocusCooldown.current -= delta;
+      if (autoFocusCooldown.current > 0) return;
+
+      const t = smooth(mixFactor);
+      let best: { entry: PhotoEntry | null; dist: number } = { entry: null, dist: Infinity };
+      data.forEach((item, i) => {
+          const entry = photoEntries[i];
+          if (!entry) return;
+          tmpVec.copy(item.chaosPos).lerp(item.targetPos, t);
+          if (photoGroupRef.current) {
+              photoGroupRef.current.localToWorld(tmpWorld.copy(tmpVec));
+          } else {
+              tmpWorld.copy(tmpVec);
+          }
+          tmpWorld.project(state.camera);
+          const dist = Math.abs(tmpWorld.x) + Math.abs(tmpWorld.y);
+          if (dist < best.dist) {
+              best = { entry, dist };
+              bestPos.copy(tmpWorld);
+          }
+      });
+
+      if (best.entry) {
+          const ndc = bestPos;
+          const sx = (ndc.x * 0.5 + 0.5) * state.size.width;
+          const sy = (ndc.y * -0.5 + 0.5) * state.size.height;
+          emitFocus(best.entry, { x: sx, y: sy });
+          autoFocusCooldown.current = 1.0; // throttle to 1s
+      }
+  });
 
   if (type === 'PHOTO') {
       if (photoEntries.length === 0) return null;
       return (
-          <group>
+          <group ref={photoGroupRef}>
               {data.map((item, i) => {
                   const entry = photoEntries[i];
                   if (!entry) return null;
                   if (entry.kind === 'image' && entry.url) {
-                      return <SuspensePhotoOrnament key={entry.key} item={item} mixFactor={mixFactor} url={entry.url} signatureTexture={entry.signature} />;
+                      return <SuspensePhotoOrnament key={entry.key} item={item} mixFactor={mixFactor} url={entry.url} signatureTexture={entry.signatureTexture} entry={entry} onFocus={emitFocus} transform={entry.transform} />;
                   }
                   if (entry.kind === 'card' && entry.texture) {
-                      return <PhotoFrameMesh key={entry.key} item={item} mixFactor={mixFactor} texture={entry.texture} signatureTexture={entry.signature} />;
+                      return <PhotoFrameMesh key={entry.key} item={item} mixFactor={mixFactor} texture={entry.texture} signatureTexture={entry.signatureTexture} entry={entry} onFocus={emitFocus} />;
                   }
                   return null;
               })}
