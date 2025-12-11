@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/three": "^0.182.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.22",
     "typescript": "~5.8.2",
