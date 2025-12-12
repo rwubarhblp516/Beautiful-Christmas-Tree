@@ -41,7 +41,9 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture, isGuiV
         
         if (isMounted) setLoadingMessage("Loading Local AI Model...");
         
-        const LOCAL_MODEL_URL = 'public/models/handpose/model.json';
+        // Vite serves `public/` at the site root. Use an absolute path so it
+        // works the same in dev and production builds (including offline).
+        const LOCAL_MODEL_URL = '/models/handpose/model.json';
 
         // Fix: Cast configuration to any to bypass type check for modelUrl support
         const net = await handpose.load({
@@ -55,7 +57,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture, isGuiV
       } catch (err) {
         console.error("Failed to load handpose model:", err);
         if (isMounted) {
-            setLoadingMessage("Network Error: Check Connection");
+          setLoadingMessage("Model load failed (check local /models/handpose)");
         }
       }
     };
