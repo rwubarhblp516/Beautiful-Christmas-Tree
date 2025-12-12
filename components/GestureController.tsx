@@ -123,7 +123,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture, isGuiV
           const x = avgPos.x / count;
           const y = avgPos.y / count;
 
-          // --- 2. Gesture Detection ---
+          // --- 2. Gesture Detection (Open / Closed) ---
           const tips = [8, 12, 16, 20]; 
           const bases = [5, 9, 13, 17];
 

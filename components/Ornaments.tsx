@@ -30,7 +30,6 @@ interface OrnamentsProps {
   signatureText?: string;
   customCards?: Array<{ id: string; message: string; signature: string }>;
   onFocusMedia?: (entry: { kind: 'image' | 'card'; url?: string; message?: string; signature?: string | null; id?: string; cacheKey?: string; editable?: boolean }, screenPos?: { x: number; y: number }) => void;
-  shouldAutoFocus?: boolean;
   photoTransforms?: Record<string, PhotoTransform>;
 }
 
@@ -681,7 +680,7 @@ const getTypeOffsetIndex = (type: string) => {
     }
 }
 
-const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], imageKeyMap = {}, signatureText, customCards = [], onFocusMedia, shouldAutoFocus = false, photoTransforms = {} }) => {
+const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, scale = 1, userImages = [], imageKeyMap = {}, signatureText, customCards = [], onFocusMedia, photoTransforms = {} }) => {
   const photoGroupRef = useRef<THREE.Group>(null);
 
   const candyTexture = useMemo(() => {
@@ -857,43 +856,7 @@ const Ornaments: React.FC<OrnamentsProps> = ({ mixFactor, type, count, colors, s
       }, origin);
   }, [onFocusMedia]);
 
-  const autoFocusCooldown = useRef(0);
-  const tmpVec = useMemo(() => new THREE.Vector3(), []);
-  const tmpWorld = useMemo(() => new THREE.Vector3(), []);
-  const bestPos = useMemo(() => new THREE.Vector3(), []);
-  useFrame((state, delta) => {
-      if (type !== 'PHOTO') return;
-      if (!shouldAutoFocus || !onFocusMedia) return;
-      autoFocusCooldown.current -= delta;
-      if (autoFocusCooldown.current > 0) return;
-
-      const t = smooth(mixFactor);
-      let best: { entry: PhotoEntry | null; dist: number } = { entry: null, dist: Infinity };
-      data.forEach((item, i) => {
-          const entry = photoEntries[i];
-          if (!entry) return;
-          tmpVec.copy(item.chaosPos).lerp(item.targetPos, t);
-          if (photoGroupRef.current) {
-              photoGroupRef.current.localToWorld(tmpWorld.copy(tmpVec));
-          } else {
-              tmpWorld.copy(tmpVec);
-          }
-          tmpWorld.project(state.camera);
-          const dist = Math.abs(tmpWorld.x) + Math.abs(tmpWorld.y);
-          if (dist < best.dist) {
-              best = { entry, dist };
-              bestPos.copy(tmpWorld);
-          }
-      });
-
-      if (best.entry) {
-          const ndc = bestPos;
-          const sx = (ndc.x * 0.5 + 0.5) * state.size.width;
-          const sy = (ndc.y * -0.5 + 0.5) * state.size.height;
-          emitFocus(best.entry, { x: sx, y: sy });
-          autoFocusCooldown.current = 1.0; // throttle to 1s
-      }
-  });
+  // Auto-focus removed: photos are enlarged only via explicit click/tap.
 
   if (type === 'PHOTO') {
       if (photoEntries.length === 0) return null;

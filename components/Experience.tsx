@@ -16,7 +16,7 @@ type PhotoTransform = { scale: number; offset: { x: number; y: number } };
 interface ExperienceProps {
   mixFactor: number;
   colors: TreeColors;
-  inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean }>;
+  inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>;
   userImages?: string[];
   userImageRecords?: Array<{ key: string; url: string }>;
   signatureText?: string;
@@ -58,7 +58,7 @@ const CANDY_COLORS = ['#FFFFFF'];
 
 // Handles Camera Parallax, Tree Rotation (Drag) and Zoom (Wheel + Pinch)
 const SceneController: React.FC<{ 
-    inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean }>, 
+    inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>, 
     groupRef: React.RefObject<THREE.Group> 
 }> = ({ inputRef, groupRef }) => {
     const { camera, gl } = useThree();
@@ -75,9 +75,9 @@ const SceneController: React.FC<{
     // Physics State
     const rotationVelocity = useRef(0.002); // Start with slow auto-spin
     
-    // Hand Control State
-    const wasDetected = useRef(false); // To detect the "grab" frame
-    const grabOffset = useRef(0);      // The rotation offset when grabbed
+    // Hand Control State (Wave Rotation)
+    const wasDetected = useRef(false); // Track presence for inertia handoff
+    const lastHandX = useRef<number | null>(null);
     
     // Smooth Input State (for Parallax)
     const currentInput = useRef({ x: 0, y: 0 }); 
@@ -207,27 +207,31 @@ const SceneController: React.FC<{
         // 3. Tree Rotation Physics
         if (groupRef.current) {
             
-            if (isHandDetected) {
-                // --- HAND CONTROL (GRAB MODE) ---
-                const HAND_ROTATION_FACTOR = Math.PI * 1.2; 
-                const targetHandRotation = currentInput.current.x * HAND_ROTATION_FACTOR;
+            const isHandOpen = !!inputRef.current.isOpen;
 
-                if (!wasDetected.current) {
-                    grabOffset.current = groupRef.current.rotation.y - targetHandRotation;
+            if (isHandDetected && isHandOpen && !isDragging.current) {
+                // --- HAND CONTROL (WAVE MODE) ---
+                const currentX = currentInput.current.x;
+                if (lastHandX.current === null) {
+                    lastHandX.current = currentX;
                     rotationVelocity.current = 0;
-                }
+                } else {
+                    const dx = currentX - lastHandX.current;
+                    lastHandX.current = currentX;
 
-                const targetAngle = targetHandRotation + grabOffset.current;
-                const smoothFactor = 6.0 * safeDelta;
-                
-                const prevRot = groupRef.current.rotation.y;
-                groupRef.current.rotation.y = THREE.MathUtils.lerp(prevRot, targetAngle, smoothFactor);
-                
-                rotationVelocity.current = (groupRef.current.rotation.y - prevRot);
+                    const deadzone = 0.01;
+                    if (Math.abs(dx) > deadzone) {
+                        const WAVE_ROTATION_FACTOR = 3.5; // tuned for normalized [-1,1] input
+                        const rotationAmount = dx * WAVE_ROTATION_FACTOR;
+                        groupRef.current.rotation.y += rotationAmount;
+                        rotationVelocity.current = rotationAmount;
+                    }
+                }
 
                 wasDetected.current = true;
 
             } else {
+                lastHandX.current = null;
                 // --- IDLE / MOUSE CONTROL (INERTIA MODE) ---
                 if (wasDetected.current) {
                     if (Math.abs(rotationVelocity.current) < 0.0001) {
@@ -261,7 +265,6 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
   const foliageCount = isMobile ? 45000 : 75000;
   
   const photoCount = (userImages?.length || 0) + (customCards?.length || 0);
-  const shouldAutoFocus = mixFactor < 0.25 && !!inputRef.current.isDetected;
   const imageKeyMap = useMemo(() => {
       const map: Record<string, string> = {};
       userImageRecords?.forEach(rec => { map[rec.url] = rec.key; });
@@ -335,7 +338,6 @@ const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, 
                 signatureText={signatureText}
                 customCards={customCards}
                 onFocusMedia={onFocusMedia}
-                shouldAutoFocus={shouldAutoFocus}
                 photoTransforms={photoTransforms}
             />
         )}

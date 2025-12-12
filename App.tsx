@@ -122,8 +122,8 @@ const App: React.FC = () => {
   // Default colors kept, UI control removed
   const [colors] = useState<TreeColors>({ bottom: '#022b1c', top: '#217a46' });
   
-  // inputRef now tracks detection state for physics switching
-  const inputRef = useRef({ x: 0, y: 0, isDetected: false });
+  // inputRef tracks detection + open state for scene control
+  const inputRef = useRef({ x: 0, y: 0, isDetected: false, isOpen: false });
   
   // Image Upload State
   const [userImages, setUserImages] = useState<string[]>([]);
@@ -324,6 +324,11 @@ const App: React.FC = () => {
       }
   }, [isMuted, bgmReady, volume]);
 
+  const closeFocused = useCallback(() => {
+      setFocusActive(false);
+      setTimeout(() => setFocusedEntry(null), 300);
+  }, []);
+
   // Wrap in useCallback to prevent new function creation on every render
   const handleGesture = useCallback((data: HandGesture) => {
     if (data.isDetected) {
@@ -336,11 +341,13 @@ const App: React.FC = () => {
         inputRef.current = { 
             x: data.position.x * 1.2, 
             y: data.position.y,
-            isDetected: true
+            isDetected: true,
+            isOpen: data.isOpen
         };
     } else {
         // Mark as not detected, keep last position to avoid jumps before fade out
         inputRef.current.isDetected = false;
+        inputRef.current.isOpen = false;
     }
   }, []);
 
@@ -506,11 +513,6 @@ const App: React.FC = () => {
       setFocusActive(false);
       requestAnimationFrame(() => setFocusActive(true));
   }, [photoSignatures, photoTransforms]);
-
-  const closeFocused = () => {
-      setFocusActive(false);
-      setTimeout(() => setFocusedEntry(null), 300);
-  };
 
   const handleSaveSignature = () => {
       if (!focusedEntry || !focusedEntry.editable) return;
