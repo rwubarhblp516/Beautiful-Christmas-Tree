@@ -1,45 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Grand Luxury Christmas Tree</title>
-    <!-- Tailwind and fonts are bundled locally for offline use -->
-    <style>
-      @font-face {
-        font-family: 'ChristmasWish';
-        src: url('/fonts/ChristmasWishCalligraphy-Calligraphy-2.ttf') format('truetype');
-        font-display: swap;
-      }
-      @font-face {
-        font-family: 'Cinzel';
-        src: url('/fonts/Cinzel-Regular.ttf') format('truetype');
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-      }
-      @font-face {
-        font-family: 'Playfair Display';
-        src: url('/fonts/PlayfairDisplay-Regular.ttf') format('truetype');
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-      }
-      @font-face {
-        font-family: 'Monsieur La Doulaise';
-        src: url('/fonts/MonsieurLaDoulaise-Regular.ttf') format('truetype');
-        font-weight: 400;
-        font-style: normal;
-        font-display: swap;
-      }
-      body { margin: 0; background-color: #010a05; overflow: hidden; }
-      .font-luxury { font-family: 'Cinzel', serif; }
-      .font-body { font-family: 'Playfair Display', serif; }
-      .font-script { font-family: 'ChristmasWish', 'Monsieur La Doulaise', cursive; }
-    </style>
-    <script type="module" src="/index.tsx"></script>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Christmas Tree</title>
+  <!-- Tailwind and fonts are bundled locally for offline use -->
+  <style>
+    @font-face {
+      font-family: 'ChristmasWish';
+      src: url('/christmas-assets/fonts/ChristmasWishCalligraphy-Calligraphy-2.ttf') format('truetype');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Cinzel';
+      src: url('/christmas-assets/fonts/Cinzel-Regular.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Playfair Display';
+      src: url('/christmas-assets/fonts/PlayfairDisplay-Regular.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Monsieur La Doulaise';
+      src: url('/christmas-assets/fonts/MonsieurLaDoulaise-Regular.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    html,
+    body {
+      margin: 0;
+      background-color: transparent !important;
+      overflow: hidden;
+    }
+
+    .font-luxury {
+      font-family: 'Cinzel', serif;
+    }
+
+    .font-body {
+      font-family: 'Playfair Display', serif;
+    }
+
+    .font-script {
+      font-family: 'ChristmasWish', 'Monsieur La Doulaise', cursive;
+    }
+  </style>
+  <script type="module" src="/index.tsx"></script>
 </head>
-  <body>
-    <div id="root"></div>
-  </body>
+
+<body>
+  <div id="root"></div>
+</body>
+
 </html>

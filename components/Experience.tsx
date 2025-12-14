@@ -14,15 +14,19 @@ import { TreeColors } from '../types';
 type PhotoTransform = { scale: number; offset: { x: number; y: number } };
 
 interface ExperienceProps {
-  mixFactor: number;
-  colors: TreeColors;
-  inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>;
-  userImages?: string[];
-  userImageRecords?: Array<{ key: string; url: string }>;
-  signatureText?: string;
-  customCards?: Array<{ id: string; message: string; signature: string }>;
-  photoTransforms?: Record<string, PhotoTransform>;
-  onFocusMedia?: (entry: { kind: 'image' | 'card'; url?: string; message?: string; signature?: string | null; id?: string; cacheKey?: string; editable?: boolean }, screenPos?: { x: number; y: number }) => void;
+    mixFactor: number;
+    colors: TreeColors;
+    inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>;
+    userImages?: string[];
+    userImageRecords?: Array<{ key: string; url: string }>;
+    signatureText?: string;
+    customCards?: Array<{ id: string; message: string; signature: string }>;
+    photoTransforms?: Record<string, PhotoTransform>;
+    onFocusMedia?: (entry: { kind: 'image' | 'card'; url?: string; message?: string; signature?: string | null; id?: string; cacheKey?: string; editable?: boolean }, screenPos?: { x: number; y: number }) => void;
+    preview?: boolean;
+    bgColor?: string | null;
+    audioAllowed?: boolean;
+    isMusicPlaying?: boolean;
 }
 
 // COLORS FOR REALISTIC OBJECTS
@@ -37,7 +41,7 @@ const BALL_COLORS = [
     '#004225', // Deep Forest Green
     '#8A2BE2', // Blue Violet
     '#DAA520'  // Goldenrod
-]; 
+];
 
 const BOX_COLORS = [
     '#800000', // Maroon
@@ -54,33 +58,33 @@ const BOX_COLORS = [
 const STAR_COLORS = ['#FFD700', '#FDB931']; // Gold variations
 const CRYSTAL_COLORS = ['#F0F8FF', '#E0FFFF', '#B0E0E6']; // Ice Blues and Whites for Snowflakes
 // Set Candy base to white, as stripes are handled via texture in Ornaments.tsx
-const CANDY_COLORS = ['#FFFFFF']; 
+const CANDY_COLORS = ['#FFFFFF'];
 
 // Handles Camera Parallax, Tree Rotation (Drag) and Zoom (Wheel + Pinch)
-const SceneController: React.FC<{ 
-    inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>, 
-    groupRef: React.RefObject<THREE.Group> 
+const SceneController: React.FC<{
+    inputRef: React.MutableRefObject<{ x: number, y: number, isDetected?: boolean, isOpen?: boolean }>,
+    groupRef: React.RefObject<THREE.Group>
 }> = ({ inputRef, groupRef }) => {
-    const { camera, gl } = useThree();
+    const { camera, gl, scene } = useThree();
     const vec = useMemo(() => new THREE.Vector3(), []);
-    
+
     // Interaction State
-    const zoomTarget = useRef(32); 
+    const zoomTarget = useRef(32);
     const isDragging = useRef(false);
     const lastPointerX = useRef(0);
-    
+
     // Touch Pinch State
     const lastTouchDistance = useRef<number | null>(null);
-    
+
     // Physics State
     const rotationVelocity = useRef(0.002); // Start with slow auto-spin
-    
+
     // Hand Control State (Wave Rotation)
     const wasDetected = useRef(false); // Track presence for inertia handoff
     const lastHandX = useRef<number | null>(null);
-    
+
     // Smooth Input State (for Parallax)
-    const currentInput = useRef({ x: 0, y: 0 }); 
+    const currentInput = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
         const canvas = gl.domElement;
@@ -94,7 +98,7 @@ const SceneController: React.FC<{
 
         const onPointerDown = (e: PointerEvent) => {
             // Allow primary pointer (mouse or first touch) to start dragging
-            if (e.isPrimary && e.button === 0) { 
+            if (e.isPrimary && e.button === 0) {
                 isDragging.current = true;
                 lastPointerX.current = e.clientX;
                 canvas.setPointerCapture(e.pointerId);
@@ -142,12 +146,12 @@ const SceneController: React.FC<{
                     const diff = lastTouchDistance.current - distance;
                     // Diff > 0: Pinched In -> Zoom Out (Increase Z)
                     // Diff < 0: Pinched Out -> Zoom In (Decrease Z)
-                    
+
                     const sensitivity = 0.15; // Zoom speed multiplier
                     zoomTarget.current += diff * sensitivity;
                     zoomTarget.current = THREE.MathUtils.clamp(zoomTarget.current, 12, 55);
                 }
-                
+
                 lastTouchDistance.current = distance;
             }
         };
@@ -162,7 +166,7 @@ const SceneController: React.FC<{
         canvas.addEventListener('pointermove', onPointerMove);
         canvas.addEventListener('pointerleave', onPointerUp);
         canvas.addEventListener('pointercancel', onPointerUp);
-        
+
         // Touch Listeners
         canvas.addEventListener('touchstart', onTouchStart, { passive: false });
         canvas.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -176,7 +180,7 @@ const SceneController: React.FC<{
             canvas.removeEventListener('pointermove', onPointerMove);
             canvas.removeEventListener('pointerleave', onPointerUp);
             canvas.removeEventListener('pointercancel', onPointerUp);
-            
+
             canvas.removeEventListener('touchstart', onTouchStart);
             canvas.removeEventListener('touchmove', onTouchMove);
             canvas.removeEventListener('touchend', onTouchEnd);
@@ -191,22 +195,22 @@ const SceneController: React.FC<{
         const targetX = inputRef.current.x;
         const targetY = inputRef.current.y;
         const isHandDetected = !!inputRef.current.isDetected;
-        
+
         // Slower smoothing for parallax (hides jitter from AI)
         const inputSmoothing = 4.0 * safeDelta;
         currentInput.current.x = THREE.MathUtils.lerp(currentInput.current.x, targetX, inputSmoothing);
         currentInput.current.y = THREE.MathUtils.lerp(currentInput.current.y, targetY, inputSmoothing);
 
         // 2. Camera Update
-        const camX = currentInput.current.x * 4; 
-        const camY = currentInput.current.y * 2; 
-        const camZ = zoomTarget.current + Math.abs(currentInput.current.x) * 2; 
+        const camX = currentInput.current.x * 4;
+        const camY = currentInput.current.y * 2;
+        const camZ = zoomTarget.current + Math.abs(currentInput.current.x) * 2;
         camera.position.lerp(vec.set(camX, camY, camZ), 4.0 * safeDelta); // Slightly faster camera catchup
         camera.lookAt(0, 0, 0);
 
         // 3. Tree Rotation Physics
         if (groupRef.current) {
-            
+
             const isHandOpen = !!inputRef.current.isOpen;
 
             if (isHandDetected && isHandOpen && !isDragging.current) {
@@ -235,7 +239,7 @@ const SceneController: React.FC<{
                 // --- IDLE / MOUSE CONTROL (INERTIA MODE) ---
                 if (wasDetected.current) {
                     if (Math.abs(rotationVelocity.current) < 0.0001) {
-                        rotationVelocity.current = 0.002; 
+                        rotationVelocity.current = 0.002;
                     }
                     wasDetected.current = false;
                 }
@@ -249,133 +253,186 @@ const SceneController: React.FC<{
             }
         }
     });
-    
+
     return null;
 };
 
-const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, userImageRecords, signatureText, customCards, onFocusMedia, photoTransforms }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  const isMobile = useMemo(
-    () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
-    []
-  );
-  const starsCount = isMobile ? 1400 : 2600;
-  const bloomIntensity = isMobile ? 0.85 : 1.2;
-  const bloomRadius = isMobile ? 0.45 : 0.6;
-  const foliageCount = isMobile ? 45000 : 75000;
-  
-  const photoCount = (userImages?.length || 0) + (customCards?.length || 0);
-  const imageKeyMap = useMemo(() => {
-      const map: Record<string, string> = {};
-      userImageRecords?.forEach(rec => { map[rec.url] = rec.key; });
-      return map;
-  }, [userImageRecords]);
+// Component to handle reactive background injection
+const ReactiveBackground: React.FC<{ preview?: boolean; bgColor?: string | null }> = ({ preview, bgColor }) => {
+    const { gl, scene } = useThree();
 
-  return (
-    <>
-      <SceneController inputRef={inputRef} groupRef={groupRef} />
-      
-      <ambientLight intensity={0.4} />
-      <spotLight position={[20, 20, 20]} angle={0.4} penumbra={1} intensity={2.0} color="#fff5d0" castShadow />
-      <pointLight position={[-10, 5, -10]} intensity={1.2} color="#00ff00" />
-      <pointLight position={[10, -5, 10]} intensity={1.2} color="#ff0000" />
-      <pointLight position={[0, 10, 10]} intensity={0.5} color="#ffffff" />
-      
-      {/* Atmosphere & stars */}
-      <fog attach="fog" args={[0x010a05, 35, 80]} />
-      <Environment preset="sunset" background={false} />
-      <Stars radius={120} depth={60} count={starsCount} factor={4} saturation={0} fade speed={0.25} />
+    useFrame(() => {
+        if (bgColor) {
+            // Force specific background color
+            const col = new THREE.Color(bgColor);
+            scene.background = col;
+            const currAlpha = gl.getClearAlpha();
+            if (currAlpha !== 1) {
+                gl.setClearColor(bgColor, 1);
+            }
+        } else if (preview) {
+            // Brute-force ensure background is null every frame
+            if (scene.background) scene.background = null;
+            const currAlpha = gl.getClearAlpha();
+            if (currAlpha !== 0) {
+                gl.setClearColor(0x000000, 0);
+            }
+        }
+    });
 
-      <Snow mixFactor={mixFactor} />
+    useEffect(() => {
+        if (bgColor) {
+            scene.background = new THREE.Color(bgColor);
+            gl.setClearColor(bgColor, 1);
+        } else if (preview) {
+            scene.background = null;
+            gl.setClearColor(0x000000, 0);
+        }
+    }, [preview, bgColor, gl, scene]);
 
-      <group ref={groupRef} position={[0, 0, 0]}>
-        <TopStar mixFactor={mixFactor} />
-        <Foliage mixFactor={mixFactor} colors={colors} count={foliageCount} />
-        <SpiralLights mixFactor={mixFactor} />
-        
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="BALL" 
-            count={60} 
-            scale={0.5}
-            colors={BALL_COLORS} 
-        />
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="BOX" 
-            count={30} 
-            scale={0.6}
-            colors={BOX_COLORS} 
-        />
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="STAR" 
-            count={25} 
-            scale={0.5}
-            colors={STAR_COLORS} 
-        />
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="CRYSTAL" 
-            count={40} 
-            scale={0.4}
-            colors={CRYSTAL_COLORS} 
-        />
-        <Ornaments 
-            mixFactor={mixFactor} 
-            type="CANDY" 
-            count={40} 
-            scale={0.8}
-            colors={CANDY_COLORS} 
-        />
-        {photoCount > 0 && (
-            <Ornaments 
-                mixFactor={mixFactor} 
-                type="PHOTO" 
-                count={photoCount} 
-                userImages={userImages}
-                imageKeyMap={imageKeyMap}
-                signatureText={signatureText}
-                customCards={customCards}
-                onFocusMedia={onFocusMedia}
-                photoTransforms={photoTransforms}
-            />
-        )}
-      </group>
-
-      <EffectComposer enableNormalPass={false} multisampling={0}>
-        <Bloom 
-            luminanceThreshold={0.9} 
-            mipmapBlur 
-            intensity={bloomIntensity} 
-            radius={bloomRadius}
-        />
-        <Vignette eskil={false} offset={0.1} darkness={1.1} />
-      </EffectComposer>
-    </>
-  );
+    return !preview && !bgColor ? <color attach="background" args={['#010a05']} /> : null;
 };
 
-const Experience: React.FC<ExperienceProps> = (props) => {
-  const isMobile = useMemo(
-    () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
-    []
-  );
-  const dprSettings = isMobile ? [1, 1.1] : [1, 1.25];
+const SceneContent: React.FC<ExperienceProps> = ({ mixFactor, colors, inputRef, userImages, userImageRecords, signatureText, customCards, onFocusMedia, photoTransforms, preview, bgColor }) => {
 
-  return (
-    <Canvas
-      dpr={dprSettings} 
-      // OPTIMIZATION: Tighten near/far planes to increase depth buffer precision on mobile.
-      // 5-80 covers the tree nicely (centered at 0, camera at 32).
-      camera={{ position: [0, 0, 32], fov: 45, near: 5, far: 80 }}
-      gl={{ antialias: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
-      shadows
-      style={{ touchAction: 'none' }}
-    >
-      <SceneContent {...props} />
-    </Canvas>
-  );
+    const groupRef = useRef<THREE.Group>(null);
+    const isMobile = useMemo(
+        () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
+        []
+    );
+    const starsCount = isMobile ? 1400 : 2600;
+    const bloomIntensity = isMobile ? 0.85 : 1.2;
+    const bloomRadius = isMobile ? 0.45 : 0.6;
+    const foliageCount = isMobile ? 45000 : 75000;
+
+    const photoCount = (userImages?.length || 0) + (customCards?.length || 0);
+    const imageKeyMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        userImageRecords?.forEach(rec => { map[rec.url] = rec.key; });
+        return map;
+    }, [userImageRecords]);
+
+    return (
+        <>
+            <SceneController inputRef={inputRef} groupRef={groupRef} />
+
+            <ambientLight intensity={0.4} />
+            <spotLight position={[20, 20, 20]} angle={0.4} penumbra={1} intensity={2.0} color="#fff5d0" castShadow />
+            <pointLight position={[-10, 5, -10]} intensity={1.2} color="#00ff00" />
+            <pointLight position={[10, -5, 10]} intensity={1.2} color="#ff0000" />
+            <pointLight position={[0, 10, 10]} intensity={0.5} color="#ffffff" />
+
+            {/* Atmosphere & stars */}
+            {!preview && <fog attach="fog" args={[0x010a05, 35, 80]} />}
+            <Environment preset="sunset" background={false} />
+            {!preview && <Stars radius={120} depth={60} count={starsCount} factor={4} saturation={0} fade speed={0.25} />}
+
+
+            <Snow mixFactor={mixFactor} />
+
+            <group ref={groupRef} position={[0, 0, 0]}>
+                <TopStar mixFactor={mixFactor} />
+                <Foliage mixFactor={mixFactor} colors={colors} count={foliageCount} />
+                <SpiralLights mixFactor={mixFactor} />
+
+                <Ornaments
+                    mixFactor={mixFactor}
+                    type="BALL"
+                    count={60}
+                    scale={0.5}
+                    colors={BALL_COLORS}
+                />
+                <Ornaments
+                    mixFactor={mixFactor}
+                    type="BOX"
+                    count={30}
+                    scale={0.6}
+                    colors={BOX_COLORS}
+                />
+                <Ornaments
+                    mixFactor={mixFactor}
+                    type="STAR"
+                    count={25}
+                    scale={0.5}
+                    colors={STAR_COLORS}
+                />
+                <Ornaments
+                    mixFactor={mixFactor}
+                    type="CRYSTAL"
+                    count={40}
+                    scale={0.4}
+                    colors={CRYSTAL_COLORS}
+                />
+                <Ornaments
+                    mixFactor={mixFactor}
+                    type="CANDY"
+                    count={40}
+                    scale={0.8}
+                    colors={CANDY_COLORS}
+                />
+                {photoCount > 0 && (
+                    <Ornaments
+                        mixFactor={mixFactor}
+                        type="PHOTO"
+                        count={photoCount}
+                        userImages={userImages}
+                        imageKeyMap={imageKeyMap}
+                        signatureText={signatureText}
+                        customCards={customCards}
+                        onFocusMedia={onFocusMedia}
+                        photoTransforms={photoTransforms}
+                    />
+                )}
+            </group>
+
+            {/* Post-processing usually messes up transparency. Disable in preview. */}
+            {!preview && (
+                <EffectComposer disableNormalPass multisampling={0}>
+                    <Bloom
+                        luminanceThreshold={0.9}
+                        mipmapBlur
+                        intensity={bloomIntensity}
+                        radius={bloomRadius}
+                    />
+                    <Vignette eskil={false} offset={0.1} darkness={1.1} />
+                </EffectComposer>
+            )}
+            <ReactiveBackground preview={preview} bgColor={bgColor} />
+        </>
+    );
+};
+
+const Experience: React.FC<ExperienceProps> = ({ preview, bgColor, ...props }) => {
+    const isMobile = useMemo(
+        () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches,
+        []
+    );
+    const dprSettings = isMobile ? [1, 1.1] : [1, 1.25];
+
+    return (
+        <Canvas
+            dpr={dprSettings as [number, number]}
+            // OPTIMIZATION: Tighten near/far planes to increase depth buffer precision on mobile.
+            // 5-80 covers the tree nicely (centered at 0, camera at 32).
+            camera={{ position: [0, 0, 32], fov: 45, near: 5, far: 80 }}
+            gl={{ antialias: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.0, alpha: true }}
+            shadows
+            onCreated={({ gl, scene }) => {
+                // Initial setup
+                if (bgColor) {
+                    scene.background = new THREE.Color(bgColor);
+                    gl.setClearColor(bgColor, 1);
+                } else if (preview) {
+                    scene.background = null;
+                    gl.setClearColor(0x000000, 0);
+                }
+            }}
+            style={{ touchAction: 'none', background: bgColor || 'transparent' }}
+        >
+            <SceneContent preview={preview} bgColor={bgColor} {...props} />
+            <ReactiveBackground preview={preview} bgColor={bgColor} />
+        </Canvas>
+    );
 };
 
 export default Experience;

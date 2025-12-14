@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "types": [
       "vite/client",
+      "@cloudflare/workers-types",
       "node",
       "three",
       "@react-three/fiber"
@@ -29,5 +30,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["./**/*"]
+  "include": [
+    "./**/*"
+  ]
 }

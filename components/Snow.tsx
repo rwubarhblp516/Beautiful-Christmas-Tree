@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { extend, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { lerp } from '../utils/math';
+import { resolveAssetPath } from '../utils/assetPath';
 
 // Ensure TS/JSX knows about these Three.js elements
 extend({ Points: THREE.Points, BufferGeometry: THREE.BufferGeometry, BufferAttribute: THREE.BufferAttribute, ShaderMaterial: THREE.ShaderMaterial });
@@ -91,13 +92,13 @@ const Snow: React.FC<{ mixFactor: number }> = ({ mixFactor }) => {
   const [spriteTex, setSpriteTex] = useState<THREE.Texture | null>(null);
   const spriteUrls = useMemo(
     () => [
-      '/snowflakes/flake1.png',
-      '/snowflakes/flake2.png',
-      '/snowflakes/flake3.png',
-      '/snowflakes/flake.png',
-      '/snowflakes/snowflake.png',
-      '/snowflakes/snow.png'
-    ],
+      'snowflakes/flake1.png',
+      'snowflakes/flake2.png',
+      'snowflakes/flake3.png',
+      'snowflakes/flake.png',
+      'snowflakes/snowflake.png',
+      'snowflakes/snow.png'
+    ].map(resolveAssetPath),
     []
   );
 

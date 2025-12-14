@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import * as tf from '@tensorflow/tfjs';
 import * as handpose from '@tensorflow-models/handpose';
+import { resolveAssetPath } from '../utils/assetPath';
 
 interface GestureControllerProps {
   onGesture: (data: { isOpen: boolean; position: { x: number; y: number }, isDetected: boolean }) => void;
@@ -41,9 +42,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture, isGuiV
         
         if (isMounted) setLoadingMessage("Loading Local AI Model...");
         
-        // Vite serves `public/` at the site root. Use an absolute path so it
-        // works the same in dev and production builds (including offline).
-        const LOCAL_MODEL_URL = '/models/handpose/model.json';
+        const LOCAL_MODEL_URL = resolveAssetPath('models/handpose/model.json');
 
         // Fix: Cast configuration to any to bypass type check for modelUrl support
         const net = await handpose.load({
